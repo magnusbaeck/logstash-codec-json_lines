@@ -28,12 +28,21 @@ class LogStash::Codecs::JSONLines < LogStash::Codecs::Base
   # Change the delimiter that separates lines
   config :delimiter, :validate => :string, :default => "\n"
 
+  # If true, the event's metadata (the `@metadata` field) will be
+  # included when used as an output codec.
+  config :metadata, :validate => :boolean, :default => false
+
   public
 
   def register
     @buffer = FileWatch::BufferedTokenizer.new(@delimiter)
     @converter = LogStash::Util::Charset.new(@charset)
     @converter.logger = @logger
+    if @metadata
+      @encoder = method(:encode_with_metadata)
+    else
+      @encoder = method(:encode_default)
+    end
   end
 
   def decode(data, &block)
@@ -43,12 +52,22 @@ class LogStash::Codecs::JSONLines < LogStash::Codecs::Base
   end
 
   def encode(event)
+    @encoder.call(event)
+  end
+
+  private
+
+  def encode_default(event)
     # Tack on a @delimiter for now because previously most of logstash's JSON
     # outputs emitted one per line, and whitespace is OK in json.
     @on_event.call(event, "#{event.to_json}#{@delimiter}")
   end
 
-  private
+  def encode_with_metadata(event)
+    # Tack on a @delimiter for now because previously most of logstash's JSON
+    # outputs emitted one per line, and whitespace is OK in json.
+    @on_event.call(event, "#{event.to_json_with_metadata}#{@delimiter}")
+  end
 
   # from_json_parse uses the Event#from_json method to deserialize and directly produce events
   def from_json_parse(json, &block)
